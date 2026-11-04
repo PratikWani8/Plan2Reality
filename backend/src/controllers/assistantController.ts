@@ -1,42 +1,58 @@
 import { Request, Response } from 'express';
+import axios from 'axios';
 import { executeAssistantChat } from '../services/aiAssistantService.js';
-import { ENV } from '../config/environment.js';
 
-export async function chatWithAssistant(req: Request, res: Response): Promise<void> {
+const AI_SERVICE_URL =
+  process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+export async function chatWithAssistant(
+  req: Request,
+  res: Response
+): Promise<void> {
   try {
-    const { message, context, history } = req.body;
+    const { message, context, history } = req.body ?? {};
 
-    if (!message || typeof message !== 'string') {
-      res.status(400).json({ error: 'Message string is required.' });
+    if (typeof message !== 'string' || !message.trim()) {
+      res.status(400).json({
+        error: 'A non-empty message string is required.',
+      });
       return;
     }
 
     const result = await executeAssistantChat({
-      message,
-      context,
-      history,
+      message: message.trim(),
+      context: context ?? {},
+      history: Array.isArray(history) ? history : [],
     });
 
     res.json(result);
   } catch (error: any) {
-    console.error('Assistant Controller Error:', error);
-    res.json({
-      reply: `AI service error: ${error.message || 'Unable to process AI command'}. Please verify your .env configuration.`,
+    console.error('Assistant Controller Error:', error?.message || error);
+
+    res.status(200).json({
+      reply:
+        'The AI assistant service is currently unreachable. Please ensure the backend AI service is running or check your network connection.',
       actions: [],
-      provider: 'error',
+      provider: 'offline',
     });
   }
 }
 
-export async function checkAssistantStatus(_req: Request, res: Response): Promise<void> {
-  res.json({
-    hasServerKey: !!(ENV.GEMINI_API_KEY || ENV.GROQ_API_KEY || ENV.OPENAI_API_KEY),
-    defaultProvider: ENV.GEMINI_API_KEY
-      ? 'gemini'
-      : ENV.GROQ_API_KEY
-      ? 'groq'
-      : ENV.OPENAI_API_KEY
-      ? 'openai'
-      : null,
-  });
+export async function checkAssistantStatus(
+  _req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const response = await axios.get(
+      `${AI_SERVICE_URL}/api/v1/assistant/status`,
+      { timeout: 4000 }
+    );
+
+    res.json(response.data);
+  } catch {
+    res.json({
+      hasServerKey: false,
+      defaultProvider: null,
+    });
+  }
 }
